@@ -13,6 +13,9 @@ sleep_diary/*
 *.png
 *.xlsx
 
+#
+.DS_Store
+
 # History files
 .Rhistory
 .Rapp.history
