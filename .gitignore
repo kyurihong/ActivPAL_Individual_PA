@@ -1,3 +1,18 @@
+#
+data/*
+output/*
+sleep_diary/*
+
+!data/.gitkeep
+!output/.gitkeep
+!sleep_diary/.gitkeep
+
+#
+*.csv
+*.pdf
+*.png
+*.xlsx
+
 # History files
 .Rhistory
 .Rapp.history
