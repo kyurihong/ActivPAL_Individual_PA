@@ -91,14 +91,23 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
       step_counts = sum(step_count, na.rm = TRUE),
       mets_mean = mean(mets, na.rm = TRUE),
       upright_mean = mean(upright_s, na.rm = TRUE),
+      
+      ###Cadence###
+      #cadence = sum(step_count, na.rm = TRUE) * (60 / epoch),
+      stepping_seconds = sum(upright_s > 0, na.rm = TRUE),
+      
       .groups = "drop"
     ) %>%
     mutate(
+      true_cadence = ifelse(stepping_seconds > 0,
+                            (step_counts / stepping_seconds)*60, NA),
       intensity_freq = factor(intensity_mode, 
                               levels = c("SED", "LPA", "MVPA", "Nonwear","Sleep")),
       datetime = epoch_start
     ) %>%
-    select(datetime, intensity_freq, step_counts, mets_mean, upright_mean)
+    select(datetime, intensity_freq, step_counts, mets_mean, upright_mean,
+           #cadence, 
+           stepping_seconds, true_cadence)
   
   
   AP_e$day <- as.Date(AP_e$datetime)
@@ -150,7 +159,6 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
   
   work_start_markers <- which(!is.na(match(AP4$datetime, work.df[[1]])))
   work_end_markers <- which(!is.na(match(AP4$datetime, work.df[[2]])))
-  
   
   
   nap_start_markers <- which(!is.na(match(AP4$datetime, nap.df[[1]])))
@@ -301,6 +309,20 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
       wake_SED = sum(sleep == 0 & nap == 0 & intensity_orig == "SED", na.rm = TRUE) * mins_per_epoch,
       wake_steps = sum(step_counts[sleep == 0 & nap == 0], na.rm =TRUE),
       
+      #work (work == 1)
+      work_mins = sum(work == 1, na.rm = TRUE) * mins_per_epoch,
+      work_MVPA = sum(work == 1 & intensity_orig == "MVPA", na.rm = TRUE) * mins_per_epoch,
+      work_LPA = sum(work == 1 & intensity_orig == "LPA", na.rm = TRUE) * mins_per_epoch,
+      work_SED = sum(work == 1 & intensity_orig == "SED", na.rm = TRUE) * mins_per_epoch,
+      work_steps = sum(step_counts[work == 1], na.rm = TRUE),
+      
+      #Leisure (work == 0 & sleep == 0 & nap == 0 & monitor == 0)
+      leisure_mins = sum(work == 0 & sleep == 0 & nap == 0 & monitor == 0, na.rm = TRUE) * mins_per_epoch,
+      leisure_MVPA = sum(work == 0 & sleep == 0 & nap == 0 & monitor == 0 & intensity_orig == "MVPA", na.rm = TRUE) * mins_per_epoch,
+      leisure_LPA = sum(work == 0 & sleep == 0 & nap == 0 & monitor == 0 & intensity_orig == "LPA", na.rm = TRUE) * mins_per_epoch,
+      leisure_SED = sum(work == 0 & sleep == 0 & nap == 0 & monitor == 0 & intensity_orig == "SED", na.rm = TRUE) * mins_per_epoch,
+      leisure_steps = sum(step_counts[work == 0 & sleep == 0 & nap == 0 & monitor == 0], na.rm = TRUE),
+      
       #Nap (nap == 1)
       nap_mins = sum(nap == 1, na.rm = TRUE)*mins_per_epoch,
       nap_MVPA = sum(nap == 1 & intensity_orig == "MVPA", na.rm = TRUE)*mins_per_epoch,
@@ -318,6 +340,16 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
       #non wear during sleep OR nap
       non_wear_sleep_or_nap = sum(monitor == 1 & (sleep == 1 | nap == 1), na.rm = TRUE),
       
+      #true_cadence
+      wake_cadence_mean = mean(true_cadence[sleep == 0 & nap == 0], na.rm = TRUE),
+      work_cadence_mean = mean(true_cadence[work == 1], na.rm = TRUE),
+      leisure_cadence_mean = mean(true_cadence[work == 0 & sleep ==0 & nap == 0 & monitor == 0], na.rm = TRUE),
+      
+      # #Cadence
+      # wake_cadence_mean = mean(cadence[sleep == 0 & nap == 0 & step_counts > 0], na.rm = TRUE),
+      # work_cadence_mean = mean(cadence[work == 1 & step_counts > 0], na.rm = TRUE),
+      # leisure_cadence_mean = mean(cadence[work == 0 & sleep ==0 & nap == 0 & monitor == 0 & step_counts > 0], na.rm = TRUE),
+      # 
       .groups = "drop"
     ) %>%
     mutate(
@@ -332,16 +364,17 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
     dplyr::select(
       participant_ID, Day, Valid, total_wear,
       wake_mins, wake_MVPA, wake_LPA, wake_SED, wake_steps,
+      work_mins, work_MVPA, work_LPA, work_SED, work_steps,
+      leisure_mins, leisure_MVPA, leisure_LPA, leisure_SED, leisure_steps,
       nap_mins, nap_MVPA, nap_LPA, nap_SED, nap_steps,
       sleep_mins, sleep_MVPA, sleep_LPA, sleep_SED, sleep_steps,
-      non_wear_sleep_or_nap
+      non_wear_sleep_or_nap,
+      wake_cadence_mean, work_cadence_mean, leisure_cadence_mean
     ) %>%
     arrange(Day)
   
   
-  # Save summary
-  dir.create("output", recursive = TRUE)
-  write.csv(AP7, paste0("output/",ID, "_epoch.csv"), row.names = FALSE)
+  write.csv(AP7, paste0("output/",ID,"_epoch.csv"), row.names = FALSE)
   write.csv(daily_summary, paste0("output/",ID,"_daily_summary.csv"), row.names = FALSE)
   write.csv(weekly_summary, paste0("output/",ID,"_weekly_summary.csv"), row.names = FALSE)
   write.csv(daily_diagnostic, paste0("output/",ID,"_daily_diagnostic.csv"), row.names = FALSE)
@@ -433,10 +466,8 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
     scale_x_datetime(date_breaks = "3 hours") +
     facet_wrap(~ day, scales = "free_x", ncol = 1)
   
-  
-  # Save plot
   ggsave(
-    filename  = paste0("output/", ID,"_Active_Plot.pdf"),
+    filename  = paste0("output/",ID,"_Active_Plot.pdf"),
     plot      = active_plot,
     width     = 14,
     height    = 40,  
@@ -445,12 +476,13 @@ process_activpal<- function(ID, activpal, sleep_diary, epoch = 30, validation = 
   )
   
   return(
-  list(
-    AP7 = AP7,
-    wear_time = wear_time,
-    daily_summary = daily_summary,
-    weekly_summary = weekly_summary,
-    daily_diagnostic = daily_diagnostic
-  )
+    list(
+      AP7 = AP7,
+      wear_time = wear_time,
+      daily_summary = daily_summary,
+      weekly_summary = weekly_summary,
+      daily_diagnostic = daily_diagnostic
+    )
   )
 }
+
